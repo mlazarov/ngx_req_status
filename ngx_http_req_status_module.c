@@ -34,12 +34,17 @@ static ngx_int_t ngx_http_req_status_write_filter(ngx_http_request_t *r,
 
 typedef struct ngx_http_req_status_loc_conf_s ngx_http_req_status_loc_conf_t;
 
+#define NGX_QPS_INTERVAL 1000
+
 typedef struct {
     ngx_uint_t                      requests;
     ngx_uint_t                      traffic;
 
     ngx_uint_t                      bandwidth;
     ngx_uint_t                      max_bandwidth;
+
+    ngx_uint_t                      qps;
+    ngx_uint_t                      max_qps;
 
     ngx_uint_t                      max_active;
 } ngx_http_req_status_data_t;
@@ -56,6 +61,10 @@ typedef struct {
     ngx_uint_t                      last_traffic;
     ngx_msec_t                      last_traffic_start;
     ngx_msec_t                      last_traffic_update;
+
+    ngx_uint_t                      last_request;
+    ngx_msec_t                      last_request_start;
+    ngx_msec_t                      last_request_update;
 
     ngx_uint_t                      len;
     u_char                          key[0];
@@ -304,6 +313,7 @@ ngx_http_req_status_handler(ngx_http_request_t *r)
     ngx_str_t                           key;
     ngx_uint_t                          i;
     ngx_time_t                         *tp;
+    ngx_msec_t                          td;
     ngx_shm_zone_t                    **pzone;
     ngx_pool_cleanup_t                 *cln;
     ngx_http_req_status_ctx_t          *r_ctx;
@@ -407,6 +417,30 @@ ngx_http_req_status_handler(ngx_http_request_t *r)
             ssn->active ++;
             if (ssn->active > ssn->data.max_active) {
                 ssn->data.max_active = ssn->active;
+            }
+
+
+            /* calculate qps */
+            if (ngx_current_msec > ssn->last_request_start) {
+
+                td = ngx_current_msec - ssn->last_request_start;
+
+                if (td >= NGX_QPS_INTERVAL) {
+                    ssn->data.qps = ssn->last_request * 1000 / td;    /* msec */
+
+                    if (ssn->data.qps > ssn->data.max_qps) {
+                        ssn->data.max_qps = ssn->data.qps;
+                    }
+
+                    ssn->last_request = 0;
+                    ssn->last_request_start = ngx_current_msec;
+                }
+            }
+
+            ssn->last_request++;
+
+            if (ngx_current_msec > ssn->last_request_update) {
+                ssn->last_request_update = ngx_current_msec;
             }
 
             ngx_queue_insert_head(&ctx->sh->queue, &ssn->queue);
@@ -565,8 +599,8 @@ ngx_http_req_status_show_handler(ngx_http_request_t *r)
     ngx_http_req_status_main_conf_t    *rmcf;
     ngx_http_req_status_print_item_t   *item;
     static u_char                       header[] = 
-        "zone_name\tkey\tmax_active\tmax_bw\ttraffic\trequests\t"
-        "active\tbandwidth\n";
+        "zone_name\tkey\tserver_addr\tmax_active\tmax_bw\ttraffic\trequests\t"
+        "active\tbandwidth\tqps\tmax_qps\n";
 
     if (r->method != NGX_HTTP_GET && r->method != NGX_HTTP_HEAD) {
         return NGX_HTTP_NOT_ALLOWED;
@@ -626,23 +660,34 @@ ngx_http_req_status_show_handler(ngx_http_request_t *r)
                 if (ngx_current_msec > rsn->last_traffic_update &&
                         ngx_current_msec - rsn->last_traffic_update >= 
                         rmcf->interval){
-                    rsn->last_traffic_start = 0;
-                    rsn->last_traffic = 0;
-                    rsn->data.bandwidth = 0;
+                    rsn->last_traffic_start  = 0;
+                    rsn->last_traffic        = 0;
+                    rsn->data.bandwidth      = 0;
                     rsn->last_traffic_update = ngx_current_msec;
                 }
             }
 
+            if (rsn->last_request) {
+                if (ngx_current_msec > rsn->last_request_update &&
+                        ngx_current_msec - rsn->last_request_update >= NGX_QPS_INTERVAL) {
+                    rsn->last_request_start  = 0;
+                    rsn->last_request        = 0;
+                    rsn->data.qps            = 0;
+                    rsn->last_request_update = ngx_current_msec;
+                }
+            }
+
             size += pzone[i]->shm_zone->shm.name.len +
-                rsn->len + (sizeof("\t") - 1) * 8 +
-                (NGX_INT64_LEN) * 6;
+                rsn->len + (sizeof("\t") - 1) * 10 +
+                (NGX_INT64_LEN) * 8;
 
             if (full_info){
-                size += (NGX_INT64_LEN) * 3 + (sizeof("\t") - 1) * 3;
+                size += (NGX_INT64_LEN) * 6 + (sizeof("\t") - 1) * 6;
             }
 
             item = ngx_array_push(&items);
             if (item == NULL){
+                ngx_shmtx_unlock(&pzone[i]->shpool->mutex);
                 return NGX_HTTP_INTERNAL_SERVER_ERROR;
             }
 
@@ -695,13 +740,15 @@ ngx_http_req_status_show_handler(ngx_http_request_t *r)
         *b->last ++ = '\t';
 
         if (long_num){
-            b->last = ngx_sprintf(b->last, "%ui\t%ui\t%ui\t%ui\t%ui\t%ui",
+            b->last = ngx_sprintf(b->last, "%ui\t%ui\t%ui\t%ui\t%ui\t%ui\t%ui\t%ui",
                     item->pdata->max_active,
                     item->pdata->max_bandwidth * 8,
                     item->pdata->traffic * 8,
                     item->pdata->requests,
                     item->node->active,
-                    item->pdata->bandwidth * 8);
+                    item->pdata->bandwidth * 8,
+                    item->pdata->qps,
+                    item->pdata->max_qps);
         } else {
             b->last = ngx_sprintf(b->last, "%ui\t", item->pdata->max_active);
             b->last = ngx_http_req_status_format_size(b->last,
@@ -717,13 +764,20 @@ ngx_http_req_status_show_handler(ngx_http_request_t *r)
 
             b->last = ngx_http_req_status_format_size(b->last,
                     item->pdata->bandwidth * 8);
+            *b->last ++ = '\t';
+
+            b->last = ngx_sprintf(b->last, "%ui\t", item->pdata->qps);
+            b->last = ngx_sprintf(b->last, "%ui\t", item->pdata->max_qps);
         }
 
         if (full_info){
-            b->last = ngx_sprintf(b->last, "\t%ui\t%ui\t%ui",
+            b->last = ngx_sprintf(b->last, "\t%ui\t%ui\t%ui\t%ui\t%ui\t%ui",
                     item->node->last_traffic * 8,
                     item->node->last_traffic_start,
-                    item->node->last_traffic_update);
+                    item->node->last_traffic_update,
+                    item->node->last_request,
+                    item->node->last_request_start,
+                    item->node->last_request_update);
         }
 
         *b->last ++ = '\n';
