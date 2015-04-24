@@ -73,10 +73,8 @@ Then you can see the page by
     
     curl http://127.0.0.1/req-status
 
-It is plain text information like:
+It is plain text information like (OLD STYLE RESULT): 
 
-
-OLD STYLE RESULT: 
     zone_name       key     max_active      max_bw  traffic requests        active  bandwidth
     imgstore_appid  43    27      6M      63G     374063  0        0
     imgstore_appid  53    329     87M     2058G   7870529 50      25M
