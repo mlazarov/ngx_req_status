@@ -1,7 +1,7 @@
 Name
 ====
 
-ngx_req_status - Request status in nginx
+ngx_req_status - Request status in nginx - returns JSON formated result
 
 Synopsis
 ========
@@ -75,6 +75,8 @@ Then you can see the page by
 
 It is plain text information like:
 
+
+OLD STYLE RESULT: 
     zone_name       key     max_active      max_bw  traffic requests        active  bandwidth
     imgstore_appid  43    27      6M      63G     374063  0        0
     imgstore_appid  53    329     87M     2058G   7870529 50      25M
@@ -87,12 +89,15 @@ It is plain text information like:
     server_name     dl.pinyin.sogou.com     913     312M    8930G   35345453        225     97M
     server_name     download.ie.sogou.com   964     275M    7462G   7979817 297     135M
 
+**Currently this plugin returns same data but json formated**
+
+
 Installation
 ============
 
-    wget "http://nginx.org/download/nginx-1.3.5.tar.gz"
-    tar -xzvf nginx-1.3.5.tar.gz
-    cd nginx-1.3.5/
+    wget "http://nginx.org/download/nginx-1.8.0.tar.gz"
+    tar -xzvf nginx-1.8.0.tar.gz
+    cd nginx-1.8.0/
 
     patch -p1 < /path/to/ngx_req_status/write_filter.patch
 
@@ -107,6 +112,7 @@ Compatibility
 
 The following versions of Nginx should work with this module:
 
+* **1.8.x**	    (last tested: 1.8.0)
 * **1.3.x**         (last tested: 1.3.5)
 * **1.2.x**
 * **1.1.x**
@@ -119,6 +125,8 @@ Authors
 =======
 
 - Lanshun Zhou *&lt;zls0424@gmail.com&gt;*
+- Aka.Why @akawhy
+
 
 Copyright & License
 ===================

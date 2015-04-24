@@ -535,7 +535,7 @@ ngx_http_req_status_expire(void *conf)
     }
 }
 
-
+/*
 static u_char *
 ngx_http_req_status_format_size(u_char *buf, ngx_uint_t v)
 {
@@ -571,7 +571,7 @@ ngx_http_req_status_format_size(u_char *buf, ngx_uint_t v)
 
     return ngx_sprintf(buf, " %ui", size);
 }
-
+*/
 static int ngx_libc_cdecl
 ngx_http_req_status_cmp_items(const void *one, const void *two)
 {
@@ -612,7 +612,7 @@ ngx_http_req_status_show_handler(ngx_http_request_t *r)
         return rc;
     }
 
-    ngx_str_set(&r->headers_out.content_type, "text/plain");
+    ngx_str_set(&r->headers_out.content_type, "application/json");
 
     if (r->method == NGX_HTTP_HEAD) {
         r->headers_out.status = NGX_HTTP_OK;
@@ -718,28 +718,60 @@ ngx_http_req_status_show_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    b->last = ngx_cpymem(b->last, header, sizeof(header) - 1);
+    /*b->last = ngx_cpymem(b->last, header, sizeof(header) - 1);*/
 
     item = items.elts;
 
+    *b->last ++ = '[';
+
     for (i = 0; i < items.nelts; i++){
+	
         if (i) {
             item = (ngx_http_req_status_print_item_t *)
                 ((u_char *)item + item_size);
         }
+	
 
         /* set pdata here because of qsort above */
         if (item->pdata == NULL){
             item->pdata = &item->data[0];
         }
-
+	
+	/*
         b->last = ngx_cpymem(b->last, item->zone_name->data, item->zone_name->len);
         *b->last ++ = '\t';
 
         b->last = ngx_cpymem(b->last, item->node->key, item->node->len);
         *b->last ++ = '\t';
+	*/
+	/*
+	b->last = ngx_cpymem(b->last,",\{"
+	if (i > 0){
+		*b->last ++ = ",\{";
+	}else{
+		*b->last ++ = "\{";
+	}
+	*/
+	if (i > 0){
+		b->last = ngx_sprintf(b->last,",{\"zone_name\":\"%s\",",item->zone_name->data);
+	}else{
+		b->last = ngx_sprintf(b->last,"{\"zone_name\":\"%s\",",item->zone_name->data);
+	}
 
-        if (long_num){
+	b->last = ngx_sprintf(b->last,"\"key\":\"%s\",",item->node->key);
+
+        /*if (long_num){*/
+		b->last = ngx_sprintf(b->last, "\"max_active\":%ui,", item->pdata->max_active);
+		b->last = ngx_sprintf(b->last, "\"max_bandwidth\":%ui,", item->pdata->max_bandwidth * 8);
+		b->last = ngx_sprintf(b->last, "\"traffic\":%ui,", item->pdata->traffic * 8);
+		b->last = ngx_sprintf(b->last, "\"requests\":%ui,", item->pdata->requests);
+		b->last = ngx_sprintf(b->last, "\"active\":%ui,", item->node->active);
+		b->last = ngx_sprintf(b->last, "\"bandwidth\":%ui,", item->pdata->bandwidth * 8);
+		b->last = ngx_sprintf(b->last, "\"qps\":%ui,", item->pdata->qps);
+		b->last = ngx_sprintf(b->last, "\"max_qps\":%ui", item->pdata->max_qps);
+		/*b->last = ngx_sprintf(b->last, "\"\":%ui,", item->pdata->);*/
+
+		/*
             b->last = ngx_sprintf(b->last, "%ui\t%ui\t%ui\t%ui\t%ui\t%ui\t%ui\t%ui",
                     item->pdata->max_active,
                     item->pdata->max_bandwidth * 8,
@@ -749,6 +781,7 @@ ngx_http_req_status_show_handler(ngx_http_request_t *r)
                     item->pdata->bandwidth * 8,
                     item->pdata->qps,
                     item->pdata->max_qps);
+		
         } else {
             b->last = ngx_sprintf(b->last, "%ui\t", item->pdata->max_active);
             b->last = ngx_http_req_status_format_size(b->last,
@@ -769,8 +802,16 @@ ngx_http_req_status_show_handler(ngx_http_request_t *r)
             b->last = ngx_sprintf(b->last, "%ui\t", item->pdata->qps);
             b->last = ngx_sprintf(b->last, "%ui\t", item->pdata->max_qps);
         }
+	*/
+	if (full_info){
+		b->last = ngx_sprintf(b->last, ",\"last_traffic\":%ui,", item->node->last_traffic * 8);
+		b->last = ngx_sprintf(b->last, "\"last_traffic_start\":%ui,", item->node->last_traffic_start);
+		b->last = ngx_sprintf(b->last, "\"last_traffic_update\":%ui,", item->node->last_traffic_update);
+		b->last = ngx_sprintf(b->last, "\"last_request\":%ui,", item->node->last_request);
+		b->last = ngx_sprintf(b->last, "\"last_request_start\":%ui,", item->node->last_request_start);
+		b->last = ngx_sprintf(b->last, "\"last_request_update\":%ui", item->node->last_request_update);
 
-        if (full_info){
+		/*
             b->last = ngx_sprintf(b->last, "\t%ui\t%ui\t%ui\t%ui\t%ui\t%ui",
                     item->node->last_traffic * 8,
                     item->node->last_traffic_start,
@@ -778,10 +819,14 @@ ngx_http_req_status_show_handler(ngx_http_request_t *r)
                     item->node->last_request,
                     item->node->last_request_start,
                     item->node->last_request_update);
+		*/
         }
-
-        *b->last ++ = '\n';
+	*b->last ++ = '}';
     }
+	
+    *b->last ++ = ']';
+
+
 
     out.buf = b;
     out.next = NULL;
